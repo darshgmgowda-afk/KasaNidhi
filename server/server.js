@@ -4,6 +4,8 @@ import multer from "multer";
 import Groq from "groq-sdk";
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { connectDB, dbUp } from "./db.js";
 import { Profile, Scan, Correction, Pickup, Chat, CATS } from "./models.js";
 import { CATEGORIES, getGuidance, getCollectors, buildContext, SAFETY_PROMPT } from "./guidance.js";
@@ -13,7 +15,7 @@ const PORT = process.env.PORT || 3000;
 const SCAN_URL = process.env.SCAN_SERVICE_URL || "http://localhost:8000";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 app.use(express.json({ limit: "300kb" }));
-app.use(express.static("public"));
+app.use(express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), "public"), { maxAge: "1h", setHeaders: (res, f) => { if (/\.(png|jpe?g|webp)$/i.test(f)) res.setHeader("Cache-Control", "public, max-age=604800"); } }));
 
 const validId = (id) => mongoose.isValidObjectId(id);
 const wrap = (fn) => (req, res) => fn(req, res).catch((err) => { console.error(err); res.status(err.status || 500).json({ error: err.status ? err.message : "Server error" }); });
@@ -41,7 +43,7 @@ async function getLatestScanAny(profileId) { if (dbUp() && validId(profileId)) r
 app.get("/api/health", async (req, res) => {
   let scanner = false;
   try { const r = await fetch(`${SCAN_URL}/health`, { signal: AbortSignal.timeout(1200) }); scanner = r.ok; } catch {}
-  res.json({ ok: true, db: dbUp(), storage: dbUp() ? "mongodb" : "memory-fallback", scanner, chat: process.env.GROQ_API_KEY ? "groq" : "offline-guidance-fallback", categories: CATEGORIES });
+  res.json({ ok: true, db: dbUp(), storage: dbUp() ? "mongodb" : "memory-fallback", scanner, chat: process.env.GROQ_API_KEY ? "groq" : "offline-guidance-fallback", voice: process.env.GROQ_API_KEY ? "groq-stt-tts" : "offline", categories: CATEGORIES });
 });
 app.get("/api/guidance/:category", (req, res) => { if (!CATEGORIES.includes(req.params.category)) return res.status(404).json({ error: "Unknown category" }); res.json(getGuidance(req.params.category, req.query.environment)); });
 app.get("/api/collectors", (req, res) => res.json(getCollectors(req.query.category, req.query.area)));
@@ -133,13 +135,15 @@ app.post("/api/chat", wrap(async (req, res) => {
   const { profileId, sessionId } = req.body;
   const profile = profileId ? await getProfileAny(profileId) : null;
   const scan = profileId ? await getLatestScanAny(profileId) : null;
-  const context = profile ? buildContext(profile, scan) : "";
+  const context = buildContext(profile, scan);
   const latestText = messages[messages.length - 1].content;
+  const voiceChannel = req.body?.channel === "voice";
+  const channelPrompt = voiceChannel ? "\nYou are speaking as Swatva Mitra, the voice assistant. Answer naturally in English and keep the answer under 180 characters so it can be spoken clearly." : "\nYou are responding as Swatva Sakhi, the text assistant.";
   let reply = "", mode = "offline-guidance";
   if (process.env.GROQ_API_KEY) {
     try {
       const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-      const completion = await groq.chat.completions.create({ model: process.env.GROQ_MODEL || "openai/gpt-oss-20b", messages: [{ role: "system", content: SAFETY_PROMPT + (context ? "\n\n" + context : "") }, ...messages], temperature: 0.35, max_completion_tokens: 1200 });
+      const completion = await groq.chat.completions.create({ model: process.env.GROQ_MODEL || "openai/gpt-oss-20b", messages: [{ role: "system", content: SAFETY_PROMPT + channelPrompt + "\n\n" + context }, ...messages], temperature: 0.35, max_completion_tokens: 1200 });
       reply = completion.choices?.[0]?.message?.content?.trim() || ""; mode = "groq";
     } catch (e) { console.error("Groq error; using safe offline fallback:", e.status, e.message); }
   }
@@ -149,6 +153,32 @@ app.post("/api/chat", wrap(async (req, res) => {
     await Chat.updateOne({ profileId, sessionId: sessionId.slice(0, 64) }, { $push: { messages: { $each: [{ role: last.role, content: last.content }, { role: "assistant", content: reply }] } } }, { upsert: true }).catch((e) => console.error("Chat save failed:", e.message));
   }
   res.json({ reply, mode });
+}));
+
+// Swatva Mitra voice layer: Groq Whisper STT -> the same /api/chat knowledge/rules -> Groq Orpheus TTS.
+app.post("/api/voice/transcribe", upload.single("audio"), wrap(async (req, res) => {
+  if (!process.env.GROQ_API_KEY) throw bad("Groq voice is not configured.", 503);
+  if (!req.file) throw bad("Send audio in form field 'audio'.");
+  const form = new FormData();
+  form.append("file", new Blob([req.file.buffer], { type: req.file.mimetype || "audio/webm" }), req.file.originalname || "mitra.webm");
+  form.append("model", process.env.GROQ_STT_MODEL || "whisper-large-v3-turbo");
+  form.append("response_format", "json");
+  form.append("language", "en");
+  const r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: form, signal: AbortSignal.timeout(60000) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw bad(data.error?.message || "Voice transcription failed.", 502);
+  res.json({ text: String(data.text || "").trim(), mode: "groq-whisper" });
+}));
+
+app.post("/api/voice/speak", wrap(async (req, res) => {
+  if (!process.env.GROQ_API_KEY) throw bad("Groq voice is not configured.", 503);
+  const raw = String(req.body?.text || "").replace(/\s+/g, " ").trim();
+  if (!raw) throw bad("Text is required.");
+  const input = raw.length <= 190 ? raw : raw.slice(0, 187).replace(/\s+\S*$/, "") + "...";
+  const r = await fetch("https://api.groq.com/openai/v1/audio/speech", { method: "POST", headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: process.env.GROQ_TTS_MODEL || "canopylabs/orpheus-v1-english", voice: process.env.GROQ_TTS_VOICE || "hannah", input, response_format: "wav" }), signal: AbortSignal.timeout(60000) });
+  if (!r.ok) { const data = await r.json().catch(() => ({})); throw bad(data.error?.message || "Voice synthesis failed.", 502); }
+  const audio = Buffer.from(await r.arrayBuffer());
+  res.set("Content-Type", "audio/wav"); res.set("Cache-Control", "no-store"); res.send(audio);
 }));
 
 app.get("*", (req, res, next) => req.path.startsWith("/api/") ? next() : res.sendFile(new URL("./public/index.html", import.meta.url).pathname));
