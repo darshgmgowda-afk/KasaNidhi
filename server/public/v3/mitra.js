@@ -37,9 +37,11 @@
     document.body.appendChild(e);e.onclick=x=>{if(x.target===e)close()};document.querySelector('#mitraMic').onclick=toggle;document.querySelector('#mitraReplay').onclick=()=>{if(audioUrl){audio?.pause();audio=new Audio(audioUrl);audio.play().catch(()=>{})}else status('Ask Mitra something first.')};document.querySelector('#mitraClose').onclick=close;
   }
   function close(){if(recorder?.state==='recording')recorder.stop();stopStream();audio?.pause();document.querySelector('#mitraModal')?.remove()}
+  const sakhiNav=typeof NAV!=='undefined'?NAV.find(x=>x[0]==='sakhi'):null;if(sakhiNav)sakhiNav[1]='Swatva Sakhi';
   function enhance(){
     if(state.page!=='sakhi')return;
     document.querySelectorAll('.page-title h1,.chat-head h3').forEach(e=>{if(e.textContent.trim()==='Swacha Sakhi')e.textContent='Swatva Sakhi'});
+    document.querySelectorAll('.msg.bot .bubble').forEach(e=>{if(e.textContent.includes('Swacha Sakhi'))e.textContent=e.textContent.replaceAll('Swacha Sakhi','Swatva Sakhi')});
     document.querySelectorAll('.page-title p').forEach(e=>{if(e.textContent.includes('Waste guidance based'))e.textContent='Text-based waste guidance grounded in the KasaNidhi rules and your profile.'});
     const head=document.querySelector('.chat-head');if(head&&!document.querySelector('#openMitra')){const b=document.createElement('button');b.id='openMitra';b.className='btn primary sm';b.textContent='🎙 Swatva Mitra';b.onclick=open;head.insertBefore(b,document.querySelector('#clearChat'))}
   }
