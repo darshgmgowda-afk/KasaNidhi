@@ -1,12 +1,17 @@
 """Zero-shot semantic classification of one real waste photo using CLIP (no custom training)."""
 from functools import lru_cache
+from pathlib import Path
 import torch
 MODEL_ID="openai/clip-vit-base-patch32"
 CANDIDATES=[("organic food waste","Organic"),("a banana peel or fruit and vegetable scraps","Organic"),("plastic recyclable waste","Recyclable"),("paper or cardboard recyclable waste","Recyclable"),("glass recyclable waste","Recyclable"),("metal recyclable waste","Recyclable"),("electronic waste","E-Waste"),("battery or hazardous waste","Hazardous"),("a light bulb","Hazardous"),("biomedical waste","Biomedical"),("general non-recyclable waste","General")]
 @lru_cache(maxsize=1)
 def _load():
  from transformers import CLIPModel,CLIPProcessor
- return CLIPModel.from_pretrained(MODEL_ID).eval(),CLIPProcessor.from_pretrained(MODEL_ID)
+ cache=str(Path(__file__).resolve().parents[1]/".local"/"huggingface")
+ def load(cls):
+  try:return cls.from_pretrained(MODEL_ID,cache_dir=cache,local_files_only=True)
+  except OSError:return cls.from_pretrained(MODEL_ID,cache_dir=cache)
+ return load(CLIPModel).eval(),load(CLIPProcessor)
 def classify(image):
  model,proc=_load();texts=[f"a photo of {d}" for d,_ in CANDIDATES];inputs=proc(text=texts,images=image.convert("RGB"),return_tensors="pt",padding=True)
  with torch.no_grad(): probs=model(**inputs).logits_per_image.softmax(dim=1)[0].tolist()

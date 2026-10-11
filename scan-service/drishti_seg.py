@@ -16,11 +16,8 @@ def _model():
     return YOLO(str(WEIGHTS))
 
 def _classify(crop):
-    try:
-        import drishti_clip
-        r = drishti_clip.classify(Image.fromarray(crop)); return r["category"], r["confidence"], r["label"]
-    except Exception:
-        return "General", 0.0, "waste item"
+    import drishti_clip
+    r = drishti_clip.classify(Image.fromarray(crop)); return r["category"], r["confidence"], r["label"]
 
 def detect(rgb, conf=0.25, max_objects=10):
     res = _model().predict(rgb, conf=conf, imgsz=640, verbose=False)[0]

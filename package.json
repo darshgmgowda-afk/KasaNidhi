@@ -3,10 +3,13 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
+    "start": "node scripts/start-local.mjs",
+    "stop": "node scripts/stop-local.mjs",
+    "setup:win": "powershell -NoProfile -ExecutionPolicy Bypass -File setup_windows.ps1",
     "dev:server": "npm --prefix server run dev",
     "dev:scan:win": "cd scan-service && .venv\\Scripts\\python.exe -m uvicorn main:app --port 8000",
     "dev:scan:mac": "cd scan-service && .venv/bin/python -m uvicorn main:app --port 8000",
-    "dev:win": "concurrently -n web,scan -c green,blue \"npm:dev:server\" \"npm:dev:scan:win\"",
+    "dev:win": "node scripts/start-local.mjs",
     "dev:mac": "concurrently -n web,scan -c green,blue \"npm:dev:server\" \"npm:dev:scan:mac\""
   },
   "devDependencies": { "concurrently": "^9.0.0" }

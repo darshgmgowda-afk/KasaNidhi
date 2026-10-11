@@ -1,4 +1,4 @@
-import base64,io
+import base64,io,importlib.util,sys
 import cv2,numpy as np
 from fastapi import FastAPI,File,HTTPException,UploadFile
 from PIL import Image,ImageOps
@@ -10,7 +10,11 @@ def _read(data):
 def _jpeg(rgb):
  ok,buf=cv2.imencode(".jpg",cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR),[cv2.IMWRITE_JPEG_QUALITY,85]);return "data:image/jpeg;base64,"+base64.b64encode(buf.tobytes()).decode()
 @app.get("/health")
-def health():return {"ok":True}
+def health():
+ import drishti_seg
+ ai_installed=all(importlib.util.find_spec(m) is not None for m in ("torch","transformers"))
+ clip=sys.modules.get("drishti_clip")
+ return {"ok":True,"color":True,"ai_libraries":ai_installed,"ai_mode":"B-seg" if drishti_seg.available() else "B-clip","clip_model":"openai/clip-vit-base-patch32","clip_loaded":bool(clip and clip._load.cache_info().currsize),"segmentation_weights":drishti_seg.available()}
 @app.post("/scan")
 async def scan(image:UploadFile=File(...),min_area:float=.002,sat_min:int=0):
  img=_read(await image.read());annotated,dets=drishti_color.detect(np.array(img),min_area,sat_min)

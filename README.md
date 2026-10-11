@@ -5,7 +5,7 @@ KasaNidhi is the TPSYOPIANS hackathon prototype for **AI-Powered Image-Based Was
 ## Current prototype
 
 - **KasaNidhi Drishti** — browser camera capture, controlled multi-object token demo, and experimental real-waste CLIP mode.
-- **Swacha Sakhi** — waste guidance assistant with Groq when configured and a deterministic guidance fallback.
+- **Swaccha Sakhi** — waste guidance assistant with Groq when configured and a deterministic guidance fallback.
 - **My Waste / Waste Action / Impact Intelligence** — saved scans, circular-action guidance, Waste Circle concepts, Zero-Out Organic, and item-count impact tracking.
 - **UI V3** — responsive light/dark interface with the Kachra is Cool hero, circular-action flow, mobile navigation, profile menu and pseudo logout.
 
@@ -17,7 +17,7 @@ The prototype is transparent about experimental and planned features. Mass/weigh
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1
-npm run dev:win
+npm start
 ```
 
 ### macOS / Linux / GitHub Codespaces
@@ -28,6 +28,22 @@ npm run dev:mac
 ```
 
 Open `http://localhost:3000`.
+
+On the configured Windows workspace, use `npm start` from either the outer
+`KasaNidhi-main-v5final` folder or this project folder. The local `.env` uses
+web/API port **3001** and Drishti port **8001**, because 3000/8000 were occupied
+by an existing application. Open **http://localhost:3001**. Ctrl+C stops both
+services. `npm stop` also stops this workspace's services, including the Python
+process tree. The launcher checks ports and waits for health before reporting ready.
+
+Setup now installs the existing CLIP AI dependencies and downloads/verifies
+`openai/clip-vit-base-patch32`. Runtime packages use an isolated virtual
+environment (Python 3.13.7 on this machine); model cache lives in ignored `.local/huggingface`.
+
+Paste `GROQ_API_KEY` into `server/.env` and restart to enable live Sakhi chat and
+Mitra voice. Voice uses Groq Whisper STT and Orpheus TTS, not local speech
+packages. `MONGO_URI` is optional; without it, saved data resets on restart.
+See [the local setup inventory](docs/LOCAL_WINDOWS.md) for details and checks.
 
 ## Services
 

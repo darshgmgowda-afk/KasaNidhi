@@ -1,4 +1,4 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
 import Groq from "groq-sdk";
@@ -10,12 +10,14 @@ import { connectDB, dbUp } from "./db.js";
 import { Profile, Scan, Correction, Pickup, Chat, CATS } from "./models.js";
 import { CATEGORIES, getGuidance, getCollectors, buildContext, SAFETY_PROMPT } from "./guidance.js";
 
+dotenv.config({ path: fileURLToPath(new URL("./.env", import.meta.url)) });
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SCAN_URL = process.env.SCAN_SERVICE_URL || "http://localhost:8000";
+const SCAN_URL = process.env.SCAN_SERVICE_URL || "http://127.0.0.1:8000";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 app.use(express.json({ limit: "300kb" }));
-app.use(express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), "public"), { maxAge: "1h", setHeaders: (res, f) => { if (/\.(png|jpe?g|webp)$/i.test(f)) res.setHeader("Cache-Control", "public, max-age=604800"); } }));
+app.use(express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), "public"), { maxAge: "1h", setHeaders: (res, f) => { if (/\.(png|jpe?g|webp)$/i.test(f)) res.setHeader("Cache-Control", "public, max-age=604800"); else if (/\.(html|js|css)$/i.test(f)) res.setHeader("Cache-Control", "no-cache"); } }));
 
 const validId = (id) => mongoose.isValidObjectId(id);
 const wrap = (fn) => (req, res) => fn(req, res).catch((err) => { console.error(err); res.status(err.status || 500).json({ error: err.status ? err.message : "Server error" }); });
@@ -121,7 +123,7 @@ app.get("/api/impact", wrap(async (req, res) => {
 function offlineSakhi(text, environment = "") {
   const q = text.toLowerCase();
   const hit = (cat) => { const g = getGuidance(cat, environment); return `${cat}: ${g.guidance} Recommended action: ${g.action}.${g.profile_note ? ` ${g.profile_note}` : ""}`; };
-  if (/battery|cell|bulb|chemical|paint|solvent/.test(q)) return hit("Hazardous");
+  if (/batter(?:y|ies)|cell|bulb|chemical|paint|solvent/.test(q)) return hit("Hazardous");
   if (/phone|mobile|charger|cable|laptop|electronic|e-waste|ewaste/.test(q)) return hit("E-Waste");
   if (/syringe|needle|medical|biomedical|bandage|sharps/.test(q)) return hit("Biomedical");
   if (/banana|peel|food|vegetable|fruit|compost|organic/.test(q)) return hit("Organic");
@@ -138,7 +140,7 @@ app.post("/api/chat", wrap(async (req, res) => {
   const context = buildContext(profile, scan);
   const latestText = messages[messages.length - 1].content;
   const voiceChannel = req.body?.channel === "voice";
-  const channelPrompt = voiceChannel ? "\nYou are speaking as Swatva Mitra, the voice assistant. Answer naturally in English and keep the answer under 180 characters so it can be spoken clearly." : "\nYou are responding as Swatva Sakhi, the text assistant.";
+  const channelPrompt = voiceChannel ? "\nYou are speaking as Swaccha Mitra, the voice assistant. Answer naturally in English and keep the answer under 180 characters so it can be spoken clearly." : "\nYou are responding as Swaccha Sakhi, the text assistant.";
   let reply = "", mode = "offline-guidance";
   if (process.env.GROQ_API_KEY) {
     try {
@@ -155,7 +157,7 @@ app.post("/api/chat", wrap(async (req, res) => {
   res.json({ reply, mode });
 }));
 
-// Swatva Mitra voice layer: Groq Whisper STT -> the same /api/chat knowledge/rules -> Groq Orpheus TTS.
+// Swaccha Mitra voice layer: Groq Whisper STT -> the same /api/chat knowledge/rules -> Groq Orpheus TTS.
 app.post("/api/voice/transcribe", upload.single("audio"), wrap(async (req, res) => {
   if (!process.env.GROQ_API_KEY) throw bad("Groq voice is not configured.", 503);
   if (!req.file) throw bad("Send audio in form field 'audio'.");
@@ -176,11 +178,15 @@ app.post("/api/voice/speak", wrap(async (req, res) => {
   if (!raw) throw bad("Text is required.");
   const input = raw.length <= 190 ? raw : raw.slice(0, 187).replace(/\s+\S*$/, "") + "...";
   const r = await fetch("https://api.groq.com/openai/v1/audio/speech", { method: "POST", headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: process.env.GROQ_TTS_MODEL || "canopylabs/orpheus-v1-english", voice: process.env.GROQ_TTS_VOICE || "hannah", input, response_format: "wav" }), signal: AbortSignal.timeout(60000) });
-  if (!r.ok) { const data = await r.json().catch(() => ({})); throw bad(data.error?.message || "Voice synthesis failed.", 502); }
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    if (/requires terms acceptance/i.test(data.error?.message || "")) return res.status(409).json({ error: "Groq voice requires Orpheus terms acceptance. Browser voice can speak this response meanwhile.", code: "groq_tts_terms_required", browserFallback: true, termsUrl: "https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english" });
+    throw bad(data.error?.message || "Voice synthesis failed.", 502);
+  }
   const audio = Buffer.from(await r.arrayBuffer());
   res.set("Content-Type", "audio/wav"); res.set("Cache-Control", "no-store"); res.send(audio);
 }));
 
-app.get("*", (req, res, next) => req.path.startsWith("/api/") ? next() : res.sendFile(new URL("./public/index.html", import.meta.url).pathname));
+app.get("*", (req, res, next) => req.path.startsWith("/api/") ? next() : res.sendFile(fileURLToPath(new URL("./public/index.html", import.meta.url))));
 await connectDB();
 app.listen(PORT, () => console.log(`KasaNidhi API + web running at http://localhost:${PORT}  (health: /api/health)`));

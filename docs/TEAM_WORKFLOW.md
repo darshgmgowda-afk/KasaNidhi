@@ -8,7 +8,7 @@ PHONE / LAPTOP BROWSER
         ▼
 Express web app + API (:3000)
    │        │        │
-   │        │        └── Swacha Sakhi → Groq if configured / safe rules fallback
+   │        │        └── Swaccha Sakhi → Groq if configured / safe rules fallback
    │        └─────────── MongoDB Atlas if configured / memory fallback
    ▼
 Drishti Python service (:8000)
@@ -24,7 +24,7 @@ Drishti Python service (:8000)
 4. Open disposal guidance and correct one result.
 5. Save the scan and show it in My Waste.
 6. Show Zero-Out Organic / specialized collection in Waste Action.
-7. Ask Swacha Sakhi a profile-aware question.
+7. Ask Swaccha Sakhi a profile-aware question.
 8. Open Impact and show the live scan updated metrics.
 
 Token mapping: Green Organic; Blue Recyclable; Red Hazardous; Yellow E-Waste; Purple Biomedical; Orange General.
@@ -35,4 +35,4 @@ macOS/Linux: `bash setup_mac.sh` then `npm run dev:mac`.
 
 Open `http://localhost:3000`.
 
-Secrets are optional for first boot. Never commit `server/.env`. Without MongoDB the demo uses memory storage; without Groq, Swacha Sakhi uses deterministic safe guidance. The production architecture remains separate and uses proper authentication/RBAC and independently scalable services.
+Secrets are optional for first boot. Never commit `server/.env`. Without MongoDB the demo uses memory storage; without Groq, Swaccha Sakhi uses deterministic safe guidance. The production architecture remains separate and uses proper authentication/RBAC and independently scalable services.
