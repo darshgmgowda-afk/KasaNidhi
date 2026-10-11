@@ -17,6 +17,10 @@ async def scan(image:UploadFile=File(...),min_area:float=.002,sat_min:int=0):
  return {"mode":"A-color","annotated":_jpeg(annotated),"confidence_note":"Token confidence is a contour-quality heuristic, not a calibrated AI probability.","items":[{"object":d["label"],"category":d["category"],"confidence":round(d["confidence"],3),"uncertain":False,"bbox":[int(v) for v in d["bbox"]]} for d in dets]}
 @app.post("/scan-ai")
 async def scan_ai(image:UploadFile=File(...)):
+ import drishti_seg
+ if drishti_seg.available():
+  img=_read(await image.read());annotated,items=drishti_seg.detect(np.array(img))
+  return {"mode":"B-seg","annotated":_jpeg(annotated),"confidence_note":"Waste segments found by a YOLOv8-seg model trained on TACO; stream assigned per crop by CLIP zero-shot. Scores are model scores, not calibrated probabilities.","items":items}
  try:import drishti_clip
  except ImportError:raise HTTPException(501,"AI libraries not installed: pip install -r requirements-ai.txt")
  img=_read(await image.read());r=drishti_clip.classify(img);uncertain=r["confidence"]<.45
