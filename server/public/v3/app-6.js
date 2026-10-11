@@ -1,0 +1,21 @@
+/* CAMERA — start/stop logic preserved; adds facing switch, freeze-frame, retake, downscale */
+let cameraStream=null,cameraRequest=0;const MAX_SIDE=1280;
+function cameraStatus(m){const el=$("#cameraStatus");if(el){el.textContent=m;el.hidden=!m}}
+function stopCamera(){cameraRequest++;if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;const v=$("#webcamfeed");if(v){v.srcObject=null;v.hidden=true}const ph=$(".camera-placeholder");if(ph&&!state.frame&&!state.scanResult)ph.hidden=false;$("#stage")?.classList.remove("live");const s=$("#startCamera"),c=$("#capturePhoto"),x=$("#stopCamera"),w=$("#switchCamera");if(s)s.disabled=false;if(c)c.disabled=true;if(x)x.hidden=true;if(w)w.hidden=true}
+async function startCamera(){stopCamera();const request=cameraRequest,button=$("#startCamera");button.disabled=true;cameraStatus("Requesting camera access…");
+ try{if(!window.isSecureContext)throw new Error("Camera access requires HTTPS or localhost. On a phone, open this app through an HTTPS address, or use Take / choose photo.");if(!navigator.mediaDevices?.getUserMedia)throw new Error("This browser does not support camera access. Use Take / choose photo instead.");
+  let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:state.facing}}})}catch(e){if(e.name!=="OverconstrainedError")throw e;stream=await navigator.mediaDevices.getUserMedia({audio:false,video:true})}
+  if(request!==cameraRequest){stream.getTracks().forEach(t=>t.stop());return}
+  state.frame=null;state.scanResult=null;$$(".camera-stage > img").forEach(i=>i.remove());cameraStream=stream;const v=$("#webcamfeed");v.srcObject=stream;v.style.transform=state.facing==="user"?"scaleX(-1)":"";v.hidden=false;$(".camera-placeholder").hidden=true;$("#stage").classList.add("live");await v.play();if(request!==cameraRequest)return;
+  $("#capturePhoto").disabled=false;$("#stopCamera").hidden=false;$("#switchCamera").hidden=false;cameraStatus("Camera ready. Position the waste item and select Capture & scan.")
+ }catch(error){if(request!==cameraRequest)return;stopCamera();const m={NotAllowedError:"Camera permission was denied. Allow camera access in your browser site settings and try again.",NotFoundError:"No camera was found. Connect a camera or use Take / choose photo.",NotReadableError:"The camera could not start. Close other apps using it and try again."};cameraStatus(m[error.name]||error.message)}}
+async function switchCamera(){state.facing=state.facing==="environment"?"user":"environment";await startCamera();if(!cameraStream)return;cameraStatus(state.facing==="user"?"Front camera.":"Rear camera.")}
+async function capturePhoto(){const v=$("#webcamfeed");if(!cameraStream||!v?.videoWidth||!v.videoHeight){cameraStatus("Wait for the camera preview before capturing.");return}
+ const b=$("#capturePhoto");b.disabled=true;
+ try{const k=Math.min(1,MAX_SIDE/Math.max(v.videoWidth,v.videoHeight)),c=document.createElement("canvas");c.width=Math.round(v.videoWidth*k);c.height=Math.round(v.videoHeight*k);const g=c.getContext("2d");if(state.facing==="user"){/* keep captured image unmirrored */}g.drawImage(v,0,0,c.width,c.height);
+  const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));if(!blob)throw new Error("Could not capture the photo. Please try again.");
+  state.source="camera";stopCamera();await scanImage(new File([blob],"camera.jpg",{type:"image/jpeg"}))}
+ catch(e){cameraStatus(e.message);if(b.isConnected)b.disabled=!cameraStream}}
+async function shrink(file){try{const bmp=await createImageBitmap(file),k=Math.min(1,MAX_SIDE/Math.max(bmp.width,bmp.height));if(k===1&&file.type==="image/jpeg"){bmp.close?.();return file}const c=document.createElement("canvas");c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);bmp.close?.();const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));return blob?new File([blob],"scan.jpg",{type:"image/jpeg"}):file}catch{return file}}
+async function retake(){if(state.frame?.startsWith("blob:"))URL.revokeObjectURL(state.frame);state.frame=null;state.scanResult=null;const again=state.source==="camera";render();if(again)startCamera()}
+window.addEventListener("pagehide",()=>stopCamera());document.addEventListener("visibilitychange",()=>{if(document.hidden&&cameraStream)stopCamera()});
